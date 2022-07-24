@@ -864,12 +864,6 @@ then
   fi
 fi
 
-# Update /boot/config.txt if needed
-if ! grep -q 'dtoverlay=dwc2' /boot/config.txt
-then
-  echo -e "dtoverlay=dwc2\n" >> /boot/config.txt
-fi
-
 configure_hostname
 
 tmpdir=/tmp/$$
