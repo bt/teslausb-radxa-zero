@@ -8,6 +8,10 @@ function isPi2 {
   grep -q "Zero 2" /sys/firmware/devicetree/base/model
 }
 
+function isRadxaZero {
+  grep -q "Radxa Zero" /sys/firmware/devicetree/base/model
+}
+
 if ! configfs_root=$(findmnt -o TARGET -n configfs)
 then
   echo "error: configfs not found"
@@ -56,6 +60,9 @@ if isPi4
 then
   echo 500 > "$gadget_root/configs/$cfg.1/MaxPower"
 elif isPi2
+then
+  echo 200 > "$gadget_root/configs/$cfg.1/MaxPower"
+elif isRadxaZero
 then
   echo 200 > "$gadget_root/configs/$cfg.1/MaxPower"
 else
