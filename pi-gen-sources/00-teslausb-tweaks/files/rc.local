@@ -31,7 +31,7 @@ function get_script () {
   local name="$2"
   local remote_path="${3:-}"
 
-  while ! curl -o "$local_path/$name" https://raw.githubusercontent.com/"$REPO"/teslausb/"$BRANCH"/"$remote_path"/"$name"
+  while ! curl -o "$local_path/$name" https://raw.githubusercontent.com/"$REPO"/teslausb-radxa-zero/"$BRANCH"/"$remote_path"/"$name"
   do
     setup_progress "get_script failed, retrying"
     sntp -S time.google.com || true
@@ -132,8 +132,8 @@ then
 
   if [ ! -e "/root/bin/setup-teslausb" ]
   then
-    REPO=${REPO:-marcone}
-    BRANCH=${BRANCH:-main-dev}
+    REPO=${REPO:-bt}
+    BRANCH=${BRANCH:-main-radxa-zero}
     # Script doesn't exist, grab it.
     setup_progress "Grabbing main setup file."
     get_script /root/bin setup-teslausb setup/pi
