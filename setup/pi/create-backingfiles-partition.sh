@@ -20,7 +20,7 @@ if [ -n "$USB_DRIVE" ]
 then
   log_progress "USB_DRIVE is set to $USB_DRIVE"
   # Check if backingfiles and mutable partitions exist
-  if [ /dev/disk/by-label/backingfiles -ef /dev/sda2 ] && [ /dev/disk/by-label/mutable -ef /dev/sda1 ]
+  if [ /dev/disk/by-label/backingfiles -ef "/dev/${USB_DRIVE}p2" ] && [ /dev/disk/by-label/mutable -ef "/dev/${USB_DRIVE}p1" ]
   then
     log_progress "Looks like backingfiles and mutable partitions already exist. Skipping partition creation."
   else
@@ -28,14 +28,14 @@ then
     wipefs -afq "$USB_DRIVE"
     parted "$USB_DRIVE" --script mktable gpt
     log_progress "$USB_DRIVE fully erased. Creating partitions..."
-    parted -a optimal -m /dev/sda mkpart primary ext4 '0%' 2GB
-    parted -a optimal -m /dev/sda mkpart primary ext4 2GB '100%'
+    parted -a optimal -m "$USB_DRIVE" mkpart primary ext4 '0%' 2GB
+    parted -a optimal -m "$USB_DRIVE" mkpart primary ext4 2GB '100%'
     log_progress "Backing files and mutable partitions created."
 
     log_progress "Formatting new partitions..."
     # Force creation of filesystems even if previous filesystem appears to exist
-    mkfs.ext4 -F -L mutable /dev/sda1
-    mkfs.xfs -f -m reflink=1 -L backingfiles /dev/sda2
+    mkfs.ext4 -F -L mutable "${USB_DRIVE}p1"
+    mkfs.xfs -f -m reflink=1 -L backingfiles "${USB_DRIVE}p2"
   fi
 
   BACKINGFILES_MOUNTPOINT="$1"
