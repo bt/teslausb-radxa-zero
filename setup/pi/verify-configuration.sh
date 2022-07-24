@@ -10,6 +10,10 @@ function check_variable () {
 }
 
 function check_supported_hardware () {
+  if grep -q 'Radxa Zero' /sys/firmware/devicetree/base/model
+  then
+    return
+  fi
   if grep -q 'Raspberry Pi Zero W' /sys/firmware/devicetree/base/model
   then
     return
