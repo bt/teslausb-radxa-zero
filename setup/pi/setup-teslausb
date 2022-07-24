@@ -65,7 +65,7 @@ function read_setup_variables {
   done
 
   # set defaults for things not set in the config
-  REPO=${REPO:-marcone}
+  REPO=${REPO:-bt}
   SNAPSHOTS_ENABLED=${SNAPSHOTS_ENABLED:-true}
   if [ "$SNAPSHOTS_ENABLED" != "true" ]
   then
@@ -77,7 +77,7 @@ function read_setup_variables {
       echo "WARNING: using '$BRANCH' branch because SNAPSHOTS_ENABLED is not true"
     fi
   else
-    BRANCH=${BRANCH:-main-dev}
+    BRANCH=${BRANCH:-main-radxa-zero}
   fi
   CONFIGURE_ARCHIVING=${CONFIGURE_ARCHIVING:-true}
   UPGRADE_PACKAGES=${UPGRADE_PACKAGES:-false}
@@ -275,7 +275,7 @@ function get_script () {
       mount -t tmpfs none "$SOURCE_DIR"
       (
         cd "$SOURCE_DIR"
-        curlwrapper -L "https://github.com/${REPO}/teslausb/archive/${BRANCH}.tar.gz" | tar zxf - --strip-components=1
+        curlwrapper -L "https://github.com/${REPO}/teslausb-radxa-zero/archive/${BRANCH}.tar.gz" | tar zxf - --strip-components=1
       )
     fi
   fi
