@@ -164,12 +164,12 @@ then
   REBOOT=true
 fi
 
-readonly BOOT_DISK=$(lsblk -dpno pkname /dev/disk/by-label/boot)
+readonly BOOT_DISK="/dev/mmcblk0boot"
 export BOOT_DISK
-readonly BOOT_PARTITION_DEVICE=$(lsblk -dpno name /dev/disk/by-label/boot)
+readonly BOOT_PARTITION_DEVICE="/dev/mmcblk0boot0"
 readonly BOOT_DEVICE_PARTITION_PREFIX=${BOOT_PARTITION_DEVICE%?}
 export BOOT_DEVICE_PARTITION_PREFIX
-readonly ROOT_PARTITION_DEVICE=$(lsblk -dpno name /dev/disk/by-label/rootfs)
+readonly ROOT_PARTITION_DEVICE="/dev/mmcblk1p1"
 export ROOT_PARTITION_DEVICE
 readonly ROOT_PART_NUM=${ROOT_PARTITION_DEVICE:0-1}
 export ROOT_PART_NUM;
@@ -216,23 +216,7 @@ function isPi4 {
 }
 
 function flash () {
-  local ON=0
-  local OFF=1
-  if isPi4
-  then
-    ON=1
-    OFF=0
-  fi
-  echo none > /sys/class/leds/led0/trigger
-  echo $OFF > /sys/class/leds/led0/brightness
-  sleep 1
-  for ((i=1; i<=$1; i++))
-  do
-    echo $ON > /sys/class/leds/led0/brightness
-    sleep .2
-    echo $OFF > /sys/class/leds/led0/brightness
-    sleep .8
-  done
+  # Radxa Zero doesn't have any external LEDs
 }
 
 function headless_setup_progress_flash () {
