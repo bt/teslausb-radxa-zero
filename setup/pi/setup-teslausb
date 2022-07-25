@@ -217,6 +217,7 @@ function isPi4 {
 
 function flash () {
   # Radxa Zero doesn't have any external LEDs
+  return
 }
 
 function headless_setup_progress_flash () {
