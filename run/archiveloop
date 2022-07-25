@@ -672,40 +672,19 @@ function truncate_log () {
 }
 
 function slowblink () {
-  echo timer > /sys/class/leds/led0/trigger
-  local ON=on
-  local OFF=off
-  if isPi4 || isKernel5
-  then
-    ON=off
-    OFF=on
-  fi
-  echo 900 > /sys/class/leds/led0/delay_$ON
-  echo 100 > /sys/class/leds/led0/delay_$OFF
+  # Radxa Zero doesn't have LEDs
+  return
 }
 
 function fastblink () {
-  echo timer > /sys/class/leds/led0/trigger
-  local ON=on
-  local OFF=off
-  if isPi4 || isKernel5
-  then
-    ON=off
-    OFF=on
-  fi
-  echo 150 > /sys/class/leds/led0/delay_$ON
-  echo 50 > /sys/class/leds/led0/delay_$OFF
+  # Radxa Zero doesn't have LEDs
+  return
 }
 
 
 function doubleblink () {
-  echo heartbeat > /sys/class/leds/led0/trigger
-  if isPi4 || isKernel5
-  then
-    echo 0 > /sys/class/leds/led0/invert
-  else
-    echo 1 > /sys/class/leds/led0/invert
-  fi
+  # Radxa Zero doesn't have LEDs
+  return
 }
 
 function set_time () {
