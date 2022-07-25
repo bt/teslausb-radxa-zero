@@ -38,9 +38,6 @@ then
   fi
 fi
 
-# turning off hdmi saves a little bit of power
-/usr/bin/tvservice -o || log "failed to turn off hdmi"
-
 export CAM_MOUNT=/mnt/cam
 export MUSIC_MOUNT=/mnt/music
 export ARCHIVE_MOUNT=/mnt/archive
