@@ -41,7 +41,7 @@ function get_script () {
 }
 
 function enable_wifi () {
-  setup_progress "Detecting whether to update wpa_supplicant.conf"
+  setup_progress "Detecting whether to update Wifi config"
   if [[ -n "$SSID" ]] && [[ -n "$WIFIPASS" ]]
   then
     if [ ! -e /boot/WIFI_ENABLED ]
@@ -50,11 +50,9 @@ function enable_wifi () {
       then
         /root/bin/remountfs_rw
       fi
-      setup_progress "Wifi variables specified, and no /boot/WIFI_ENABLED. Building wpa_supplicant.conf."
-      cp /boot/wpa_supplicant.conf.sample /boot/wpa_supplicant.conf
-      sed -i -e "sTEMPSSID${SSID}g" /boot/wpa_supplicant.conf
-      sed -i -e "sTEMPPASS${WIFIPASS}g" /boot/wpa_supplicant.conf
-      cp /boot/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
+      setup_progress "Wifi variables specified, and no /boot/WIFI_ENABLED. Creating Wifi config"
+      rm -f /etc/NetworkManager/system-connections/*.nmconnection # Delete old connections
+      /boot/generate-nm-wifi-config.sh "$SSID" "$WIFIPASS" > /etc/NetworkManager/system-connections/$SSID.nmconnection
 
       # set the host name now if possible, so it's effective immediately after the reboot
       local old_host_name
