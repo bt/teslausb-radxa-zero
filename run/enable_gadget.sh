@@ -43,7 +43,7 @@ echo 0x0100 > "$gadget_root/bcdDevice" # v1.0.0
 echo 0x0200 > "$gadget_root/bcdUSB"    # USB 2.0
 mkdir -p "$gadget_root/strings/$lang"
 mkdir -p "$gadget_root/configs/$cfg.1/strings/$lang"
-echo "TeslaUSB-$(grep Serial /proc/cpuinfo | awk '{print $3}')" > "$gadget_root/strings/$lang/serialnumber"
+echo "TeslaUSB-Radxa" > "$gadget_root/strings/$lang/serialnumber"
 echo TeslaUSB > "$gadget_root/strings/$lang/manufacturer"
 echo "TeslaUSB Composite Gadget" > "$gadget_root/strings/$lang/product"
 echo "TeslaUSB Config" > "$gadget_root/configs/$cfg.1/strings/$lang/configuration"
