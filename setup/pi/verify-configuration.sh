@@ -9,36 +9,51 @@ function check_variable () {
   fi
 }
 
-function check_supported_hardware () {
-  if grep -q 'Radxa Zero' /sys/firmware/devicetree/base/model
+function check_udc () {
+  local udc
+  udc=$(find /sys/class/udc -type l -prune | wc -l)
+  if [ "$udc" = "0" ]
   then
-    return
+    setup_progress "STOP: this device ($(cat /sys/firmware/devicetree/base/model)) does not have a UDC driver"
+    exit 1
   fi
-  if grep -q 'Raspberry Pi Zero W' /sys/firmware/devicetree/base/model
+}
+
+function check_xfs () {
+  setup_progress "Checking XFS support"
+  # install XFS tools if needed
+  if ! hash mkfs.xfs
   then
-    return
+    apt-get -y --force-yes install xfsprogs
   fi
-  if grep -q 'Raspberry Pi Zero 2' /sys/firmware/devicetree/base/model
+  truncate -s 1GB /tmp/xfs.img
+  mkfs.xfs -m reflink=1 -f /tmp/xfs.img > /dev/null
+  mkdir -p /tmp/xfsmnt
+  if ! mount /tmp/xfs.img /tmp/xfsmnt
   then
-    return
+    setup_progress "STOP: xfs does not support required features"
+    exit 1
   fi
-  if grep -q 'Raspberry Pi 4' /sys/firmware/devicetree/base/model
-  then
-    return
-  fi
-  setup_progress "STOP: unsupported hardware: '$(cat /sys/firmware/devicetree/base/model)'"
-  setup_progress "(only Pi Zero W and Pi 4 have the necessary hardware to run teslausb)"
-  exit 1
+
+  umount /tmp/xfsmnt
+  rm -rf /tmp/xfs.img /tmp/xfsmnt
+  setup_progress "XFS supported"
 }
 
 function check_available_space () {
-    if [ -z "$USB_DRIVE" ]
+    if [ -z "$DATA_DRIVE" ]
     then
-      setup_progress "USB_DRIVE is not set. SD card will be used."
+      setup_progress "DATA_DRIVE is not set. SD card will be used."
       check_available_space_sd
     else
-      setup_progress "USB_DRIVE is set to $USB_DRIVE. This will be used for /mutable and backingfiles."
-      check_available_space_usb
+      if grep -q 'Pi 4' /sys/firmware/devicetree/base/model
+      then
+        setup_progress "USB_DRIVE is set to $USB_DRIVE. This will be used for /mutable and backingfiles."
+        check_available_space_usb
+      else
+        setup_progress "STOP: USB_DRIVE is supported only on a Pi 4. Set USB_DRIVE to blank or comment it to continue"
+        exit 1
+      fi
     fi
 }
 
@@ -80,26 +95,26 @@ function check_available_space_usb () {
 
   # Verify that the disk has been provided and not a partition
   local drive_type
-  drive_type=$(lsblk -pno TYPE "$USB_DRIVE" | head -n 1)
+  drive_type=$(lsblk -pno TYPE "$DATA_DRIVE" | head -n 1)
 
   if [ "$drive_type" != "disk" ]
   then
-    setup_progress "STOP: The provided drive seems to be a partition. Please specify path to the disk."
+    setup_progress "STOP: The specified drive ($DATA_DRIVE) is not a disk (TYPE=$drive_type). Please specify path to the disk."
     exit 1
   fi
 
   # This verifies only the total size of the USB Drive.
   # All existing partitions on the drive will be erased if backingfiles are to be created or changed.
-  # EXISTING DATA ON THE USB_DRIVE WILL BE REMOVED.
+  # EXISTING DATA ON THE DATA_DRIVE WILL BE REMOVED.
 
   local drive_size
-  drive_size=$(blockdev --getsize64 "$USB_DRIVE")
+  drive_size=$(blockdev --getsize64 "$DATA_DRIVE")
 
   # Require at least 64GB drive size, or 59 GiB.
   if [ "$drive_size" -lt  $(( (1<<30) * 59)) ]
   then
     setup_progress "STOP: The USB drive is too small: $(( drive_size / 1024 / 1024 / 1024 ))GB available. Expected at least 64GB"
-    setup_progress "$(parted "$USB_DRIVE" print)"
+    setup_progress "$(parted "$DATA_DRIVE" print)"
     exit 1
   fi
 
@@ -112,25 +127,19 @@ function check_setup_teslausb () {
     setup_progress "STOP: setup-teslausb is not in /root/bin"
     exit 1
   fi
-  if ! grep selfupdate /root/bin/setup-teslausb > /dev/null
+
+  local parent
+  parent="$(ps -o comm= $PPID)"
+  if [ "$parent" != "setup-teslausb" ]
   then
-    setup_progress "setup-teslausb is outdated, attempting update"
-    if curl --fail -s -o /root/bin/setup-teslausb.new https://raw.githubusercontent.com/marcone/teslausb/main-dev/setup/pi/setup-teslausb
-    then
-      if /root/bin/remountfs_rw > /dev/null && mv /root/bin/setup-teslausb.new /root/bin/setup-teslausb && chmod +x /root/bin/setup-teslausb
-      then
-        setup_progress "updated setup-teslausb"
-        setup_progress "restarting updated setup-teslausb"
-        /root/bin/setup-teslausb
-        exit 0
-      fi
-    fi
-    setup_progress "STOP: failed to update setup-teslausb"
+    setup_progress "STOP: $0 must be called from setup-teslausb: $parent"
     exit 1
   fi
 }
 
-check_supported_hardware
+check_udc
+
+check_xfs
 
 check_setup_teslausb
 

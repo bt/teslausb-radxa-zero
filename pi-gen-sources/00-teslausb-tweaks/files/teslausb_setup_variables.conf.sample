@@ -36,12 +36,24 @@ export SHARE_PASSWORD=password
 # The following is optional
 #export RCLONE_FLAGS=()
 
-# The following option is only for the Pi4. If you wish to boot the Pi4 from
-# sd card, but store recordings on a USB drive or SSD, uncomment the following
-# line. If you don't plan on using an sd card at all (i.e. you are both booting
-# from and storing recordings on the USB drive), or are ONLY using an sd card
-# (i.e. boot from and store recordings on sd card), do NOT uncommment this line.
-# export USB_DRIVE=/dev/sda
+# The DATA_DRIVE option (formerly USB_DRIVE) is used to specify that you want
+# to store recordings on a different drive than the boot drive. If you don't
+# plan on using an sd card at all (i.e. you are both booting from and storing
+# recordings on the USB drive), or are ONLY using an sd card (i.e. boot from
+# and store recordings on sd card), do NOT uncommment this line.
+# This should be set to the device name of the drive, e.g. /dev/sda for a drive
+# connected to a USB port, or /dev/nvme0n1 for an onboard NVME drive.
+# NOTE: the specified drive will be wiped and repartitioned.
+# export DATA_DRIVE=/dev/sda
+
+# The car normally keeps an hour worth of RecentClips, however there have been
+# reports of that amount varying by country.
+# In order to keep a continuous record of RecentClips the snapshot interval
+# should be set about 2 minutes shorter than the amount of RecentClips history
+# the car keeps. The following adjusts the capture interval for cases where the
+# car only keeps 10 minutes of history. Please follow your local regulations
+# when uncommenting and/or adjusting this setting.
+# export SNAPSHOT_INTERVAL=480 # this number is in seconds
 
 # uncomment this to archive RecentClips in addition to SavedClips and SentryClips
 #export ARCHIVE_RECENTCLIPS=true
@@ -169,6 +181,11 @@ export WIFIPASS='your_pass'
 # export MATRIX_USERNAME=put_your_matrix_username_here
 # export MATRIX_PASSWORD='put_your_matrix_password_here'
 # export MATRIX_ROOM='put_the_matrix_target_room_id_here'
+
+# Uncomment if setting up shell notifications.
+# export NOTIFICATION_COMMAND_ENABLED=true
+# export NOTIFICATION_COMMAND_START="ssh root@remote-server 'expect videos command'"
+# export NOTIFICATION_COMMAND_FINISH="ssh root@remote-server 'process videos command'"
 
 # tesla_dashcam / Trigger file support.
 # Uncomment any TRIGGER_FILE_xxxxx below to create trigger file(s) in the

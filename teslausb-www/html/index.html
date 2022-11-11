@@ -331,6 +331,38 @@ video {
   display: inline-block;
 }
 
+.status_wifi {
+  margin: auto;
+  display: flex;
+  flex-direction: row;
+}
+
+.wifi-icon[strength*="++++"] > .wifi-high {
+  stroke: blue;
+}
+
+.wifi-icon[strength*="+++"] > .wifi-medium {
+  stroke: blue;
+}
+
+.wifi-icon[strength*="++"] > .wifi-low {
+  stroke: blue;
+}
+
+.wifi-icon[strength*="+"] > .wifi-none {
+  stroke: blue;
+}
+
+.wifi-icon[strength="-"] > .wifi-none {
+  stroke: lightgrey;
+  fill: lightgrey;
+}
+
+/* put some horizontal spacing between the children of the wifi row */
+.status_wifi > *:not(:last-child) {
+  margin-right: 7px;
+}
+
 .flatbutton:hover {
   color: white;
 }
@@ -340,6 +372,11 @@ video {
   padding: 5px;
   margin-bottom: 10px;
   border: 1px solid lightgrey;
+}
+
+/* put some vertical spacing between the children of the status area */
+.pistatus > *:not(:last-child) {
+  margin-bottom: 3px;
 }
 
 </style>
@@ -414,10 +451,49 @@ video {
 <div class="status_drives"></div>
 <div class="status_space"></div>
 <div class="status_snapshots"></div>
+<div class="status_ether">
+  <span>Ethernet:
+    <span class="status_ether_info"></span>
+  </span>
+</div>
+<div class="status_wifi">
+  <span>Wifi:
+    <span class="status_wifi_info"> </span>
+  </span>
+  <span class="wifi-icon-span" title="">
+    <svg width="20px" height="18px" viewBox="0 5 110 95">
+      <g class="wifi-icon" strength="a">
+        <circle class="wifi-none" cx="56" cy="77" r="5" stroke="blue" stroke-width="1" fill="black" />
+        <path class="wifi-low" fill="none" stroke-width="10" stroke="lightgrey"
+              stroke-linecap="round" d="m 76 63 c -11 -11 -29 -11 -40 0"/>
+        <path class="wifi-medium" fill="none" stroke-width="10" stroke="lightgrey"
+              stroke-linecap="round" d="m 93 48 c -20 -20 -53 -20 -73 0"/>
+        <path class="wifi-high" fill="none" stroke-width="10" stroke="lightgrey"
+              stroke-linecap="round" d="m 109 32 c -29 -29 -76 -29 -105 0"/>
+      </g>
+    </svg>
+  </span>
+</div>
 </div>
 <button class="group2" id="toggledrives" onclick="toggledrivesfunc();"></button>
 <p>
 <button class="group2" onclick="syncfunc();">Trigger archive/sync</button><span id="synctext" style="padding-left:20px;"></span>
+<p>
+<button class="group2" onclick="startspeedtest(this);" id="speedtestbutton">Run network speed test</button><span height="25px"><span style="padding-left:10px;"></span><svg id="speedspinner" width="20px" height="20px" style="vertical-align:middle;visibility:hidden;" viewBox="-12 -12 24 24">
+<g stroke-linecap="round" stroke-width="2">
+<path id="a" d="M0 5 0 10"/>
+<use transform="rotate(0)"   xlink:href="#a" stroke="#f0f0f0"/>
+<use transform="rotate(36)"  xlink:href="#a" stroke="#e0e0e0"/>
+<use transform="rotate(72)"  xlink:href="#a" stroke="#d0d0d0"/>
+<use transform="rotate(108)" xlink:href="#a" stroke="#c0c0c0"/>
+<use transform="rotate(144)" xlink:href="#a" stroke="#b0b0b0"/>
+<use transform="rotate(180)" xlink:href="#a" stroke="#a0a0a0"/>
+<use transform="rotate(216)" xlink:href="#a" stroke="#909090"/>
+<use transform="rotate(252)" xlink:href="#a" stroke="#808080"/>
+<use transform="rotate(288)" xlink:href="#a" stroke="#707070"/>
+<use transform="rotate(324)" xlink:href="#a" stroke="#000000"/>
+</g>
+</svg><span id="speedtext" style="padding-left:10px;"></span></span>
 <p>
 <button class="group2" id="rebootbutton" onclick="rebootfunc(this);">Restart Raspberry Pi</button><span id="reboottext" style="padding-left:20px;"></span>
 </div>
@@ -779,6 +855,124 @@ function syncfunc() {
   setTimeout(function() { msg.textContent=""; }, 5000);
 }
 
+class Speedometer {
+  amount;
+  time;
+  maxlength;
+
+  constructor(maxlength) {
+    this.maxlength = maxlength;
+    this.amount = [0];
+    this.time = [Date.now()];
+  }
+
+  addValue(value) {
+    this.amount.push(value);
+    this.time.push(Date.now());
+    if (this.amount.length > this.maxlength) {
+      this.amount.shift();
+      this.time.shift();
+    }
+  }
+
+  getRecentAverage() {
+    if (this.time.length > 1) {
+      var timeDelta = this.time[this.time.length - 1] - this.time[0];
+      var amountDelta = this.amount[this.amount.length - 1] - this.amount[0];
+      return 1000 * amountDelta / timeDelta;
+    }
+    return 0;
+  }
+}
+
+var totalRandom;
+var randomReader = undefined;
+var speedometer;
+
+function byteRate(speed) {
+  if (speed > 500000) {
+    return (speed / (1024 * 1024)).toFixed(1) + " MB/s"; 
+  } else {
+    return (speed / 1024).toFixed(1) + " KB/s";
+  }
+}
+
+function bitRate(speed) {
+  // for speeds under 20 Mbit, show one decimal
+  return (speed * 8 / 1000000).toFixed(speed < 2500000 ? 1 : 0) + " Mbit/s";
+}
+
+function showspeed(button, indicator, spinner) {
+  if (randomReader != undefined) {
+    if (isElementVisible(button)) {
+      speedometer.addValue(totalRandom);
+      var speed = speedometer.getRecentAverage();
+      var speedstring = byteRate(speed) + " (" + bitRate(speed) + ")";
+      indicator.textContent = speedstring;
+      setTimeout(showspeed, 1000, button, indicator, spinner);
+    } else {
+      stopspeedtest(button, indicator, spinner);
+    }
+  }
+}
+
+var lastTotalRandom = 0;
+var spinAngle = 0;
+function updatespeedspinner(spinner) {
+  if (randomReader != undefined) {
+    if (totalRandom != lastTotalRandom) {
+      lastTotalRandom = totalRandom;
+      spinAngle += 36;
+      spinner.setAttribute('transform', 'rotate('+ spinAngle + ')');
+    }
+    setTimeout(updatespeedspinner, 80, spinner)
+  }
+}
+
+function startspeedtest(button) {
+  var indicator = document.getElementById("speedtext");
+  var spinner = document.getElementById('speedspinner');
+  if (randomReader == undefined) {
+    log("starting speed test");
+    button.textContent="Stop network speed test";
+    spinner.style.visibility = "inherit";
+    (async () => {
+      const randomStream = await fetch('cgi-bin/randomdata.sh')
+      randomReader = await randomStream.body.getReader()
+      totalRandom = 0;
+      speedometer = new Speedometer(5);
+      setTimeout(showspeed, 1000, button, indicator, spinner);
+      setTimeout(updatespeedspinner, 100, spinner);
+
+      randomReader.read().then(function receiveRandomChunk({ done, value }) {
+        if (done) {
+          log("speed test end");
+          return
+        }
+        totalRandom += value.length;
+        return randomReader.read().then(receiveRandomChunk)
+      })
+    })()
+  } else {
+    stopspeedtest(button, indicator, spinner);
+  }
+}
+
+function stopspeedtest(button, indicator, spinner) {
+  if (randomReader != undefined) {
+    log("stopping speed test");
+    try {
+      randomReader.cancel();
+    } catch (error) {
+      log(error);
+    }
+    randomReader = undefined;
+    button.textContent="Run network speed test";
+    indicator.textContent = "";
+    spinner.style.visibility = "hidden";
+  }
+}
+
 function setbuttonsdisabled(group, disabled) {
   var buttons=document.getElementsByClassName(group);
   for (btn of buttons) {
@@ -887,11 +1081,29 @@ function toggledrivesfunc() {
   callcgi('cgi-bin/toggledrives.sh');
 }
 
+var statusvals;
+const max_status_age = 4000;
+
+function updateuptimeonly() {
+  if (statusvals != undefined) {
+    var status_age = (Date.now() - statusvals.retrieved);
+    var uptime = Math.round(statusvals.uptime) + (status_age / 1000);
+    var uptimediv = document.querySelector(".status_uptime");
+    uptimediv.innerText = "Uptime: " + uptimeString(uptime);
+  }
+  if (statusvals != undefined && status_age >= max_status_age) {
+    setTimeout(showstatus, 10);
+  } else {
+    setTimeout(updateuptimeonly, 1000);
+  }
+}
+
 function showstatus() {
   var uptimediv = document.querySelector(".status_uptime");
   if (isElementVisible(uptimediv) || uptimediv.clientHeight == 0) {
     readfile({url:'cgi-bin/status.sh', callback:function(value) {
       statusvals=JSON.parse(value);
+      statusvals.retrieved = Date.now();
       uptimediv.innerText = "Uptime: " + uptimeString(statusvals.uptime);
 
       var tempdiv = document.querySelector(".status_temp");
@@ -925,9 +1137,46 @@ function showstatus() {
         }
       }
       drivesdiv.innerText = snaps;
+      var etherdiv = document.querySelector(".status_ether");
+      if (statusvals.ether_speed == "") {
+        etherdiv.style.display="none";
+      } else {
+        etherdiv.style.display="";
+        var etherinfospan = document.querySelector(".status_ether_info");
+        var etherinfo="";
+        if (statusvals.ether_speed == "Unknown!") {
+          etherinfo = "Not connected."
+        } else {
+          etherinfo = statusvals.ether_speed + ", " + statusvals.ether_ip;
+        }
+        etherinfospan.innerText = etherinfo;
+      }
+      var wifiinfospan = document.querySelector(".status_wifi_info");
+      var wifiinfo;
+      var wifiicon = document.querySelector(".wifi-icon");
+      var wifiiconspan = document.querySelector(".wifi-icon-span");
+      if (statusvals.wifi_ssid == "") {
+        wifiinfo = "Not connected.";
+        wifiicon.attributes.strength.value = "-";
+        wifiiconspan.setAttribute("title", "Not connected");
+      } else {
+        wifiinfo = statusvals.wifi_ssid + ", " +
+                  (statusvals.wifi_freq/1000000000).toFixed(1) + " GHz, ";
+        if (statusvals.wifi_ip == "") {
+          wifiinfo += "no IP address";
+        } else {
+          wifiinfo += statusvals.wifi_ip;
+        }
+        var strength = eval(statusvals.wifi_strength);
+        var str = "+".repeat(1 + 3.99 * strength);
+        var wifiicon = document.querySelector(".wifi-icon");
+        wifiicon.attributes.strength.value = str;
+        wifiiconspan.setAttribute("title", "Signal quality: " + (strength * 100).toFixed(0) + "%");
+      }
+      wifiinfospan.innerText = wifiinfo;
     }});
   }
-  setTimeout(showstatus, 1000);
+  setTimeout(updateuptimeonly, 1000);
 }
 
 function initialize() {
@@ -1635,7 +1884,9 @@ readfile({url:'cgi-bin/videolist.sh', callback:function(value) {
       log("added event json to " + clipday);
     }
   }
-  newestsequence.select();
+  if (newestsequence != undefined) {
+    newestsequence.select();
+  }
 
   for (i of ["RecentClips", "SavedClips", "SentryClips"]) {
     var d=document.getElementById(i);

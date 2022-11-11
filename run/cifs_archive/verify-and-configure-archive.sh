@@ -15,7 +15,11 @@ function log_progress () {
 function check_archive_server_reachable () {
   log_progress "Verifying that the archive server $ARCHIVE_SERVER is reachable..."
   local serverunreachable=false
-  hping3 -c 1 -S -p 445 "$ARCHIVE_SERVER" 1>/dev/null 2>&1 || serverunreachable=true
+  local default_interface
+  default_interface=$(route | grep "^default" | awk '{print $NF}')
+  hping3 -c 1 -S -p 445 "$ARCHIVE_SERVER" 1>/dev/null 2>&1 ||
+    hping3 -c 1 -S -p 445 -I "$default_interface" "$ARCHIVE_SERVER" 1>/dev/null 2>&1 ||
+    serverunreachable=true
 
   if [ "$serverunreachable" = true ]
   then
@@ -98,7 +102,7 @@ function check_archive_mountable () {
 
 function install_required_packages () {
   log_progress "Installing/updating required packages if needed"
-  apt-get -y --force-yes install hping3
+  apt-get -y --force-yes install hping3 cifs-utils netcat
   log_progress "Done"
 }
 

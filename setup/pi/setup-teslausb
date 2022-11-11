@@ -1,119 +1,15 @@
 #!/bin/bash -eu
 
-# this function is also called by archiveloop by sourcing this script
-function read_setup_variables {
-  if [ -z "${setup_file+x}" ]
-  then
-    local -r setup_file=/root/teslausb_setup_variables.conf
-  fi
-  if [ -e $setup_file ]
-  then
-    # "shellcheck" doesn't realize setup_file is effectively a constant
-    # shellcheck disable=SC1090
-    source $setup_file
-  else
-    echo "couldn't find $setup_file"
-    return 1
-  fi
-
-  # TODO: change this "declare" to "local" when github updates
-  # to a newer shellcheck.
-  declare -A newnamefor
-
-  newnamefor[archiveserver]=ARCHIVE_SERVER
-  newnamefor[camsize]=CAM_SIZE
-  newnamefor[musicsize]=MUSIC_SIZE
-  newnamefor[sharename]=SHARE_NAME
-  newnamefor[musicsharename]=MUSIC_SHARE_NAME
-  newnamefor[shareuser]=SHARE_USER
-  newnamefor[sharepassword]=SHARE_PASSWORD
-  newnamefor[tesla_email]=TESLA_EMAIL
-  newnamefor[tesla_password]=TESLA_PASSWORD
-  newnamefor[tesla_vin]=TESLA_VIN
-  newnamefor[timezone]=TIME_ZONE
-  newnamefor[usb_drive]=USB_DRIVE
-  newnamefor[archivedelay]=ARCHIVE_DELAY
-  newnamefor[trigger_file_saved]=TRIGGER_FILE_SAVED
-  newnamefor[trigger_file_sentry]=TRIGGER_FILE_SENTRY
-  newnamefor[trigger_file_any]=TRIGGER_FILE_ANY
-  newnamefor[pushover_enabled]=PUSHOVER_ENABLED
-  newnamefor[pushover_user_key]=PUSHOVER_USER_KEY
-  newnamefor[pushover_app_key]=PUSHOVER_APP_KEY
-  newnamefor[gotify_enabled]=GOTIFY_ENABLED
-  newnamefor[gotify_domain]=GOTIFY_DOMAIN
-  newnamefor[gotify_app_token]=GOTIFY_APP_TOKEN
-  newnamefor[gotify_priority]=GOTIFY_PRIORITY
-  newnamefor[ifttt_enabled]=IFTTT_ENABLED
-  newnamefor[ifttt_event_name]=IFTTT_EVENT_NAME
-  newnamefor[ifttt_key]=IFTTT_KEY
-  newnamefor[sns_enabled]=SNS_ENABLED
-  newnamefor[aws_region]=AWS_REGION
-  newnamefor[aws_access_key_id]=AWS_ACCESS_KEY_ID
-  newnamefor[aws_secret_key]=AWS_SECRET_ACCESS_KEY
-  newnamefor[aws_sns_topic_arn]=AWS_SNS_TOPIC_ARN
-
-  local oldname
-  for oldname in "${!newnamefor[@]}"
-  do
-    local newname=${newnamefor[$oldname]}
-    if [[ -z ${!newname+x} ]] && [[ -n ${!oldname+x} ]]
-    then
-      local value=${!oldname}
-      export $newname="$value"
-      unset $oldname
-    fi
-  done
-
-  # set defaults for things not set in the config
-  REPO=${REPO:-bt}
-  SNAPSHOTS_ENABLED=${SNAPSHOTS_ENABLED:-true}
-  if [ "$SNAPSHOTS_ENABLED" != "true" ]
-  then
-    BRANCH="no-snapshots"
-    if declare -F setup_progress > /dev/null
-    then
-      setup_progress "WARNING: using '$BRANCH' branch because SNAPSHOTS_ENABLED is not true"
-    else
-      echo "WARNING: using '$BRANCH' branch because SNAPSHOTS_ENABLED is not true"
-    fi
-  else
-    BRANCH=${BRANCH:-main-radxa-zero}
-  fi
-  CONFIGURE_ARCHIVING=${CONFIGURE_ARCHIVING:-true}
-  UPGRADE_PACKAGES=${UPGRADE_PACKAGES:-false}
-  export TESLAUSB_HOSTNAME=${TESLAUSB_HOSTNAME:-teslausb}
-  SAMBA_ENABLED=${SAMBA_ENABLED:-false}
-  SAMBA_GUEST=${SAMBA_GUEST:-false}
-  INCREASE_ROOT_SIZE=${INCREASE_ROOT_SIZE:-0}
-  export CAM_SIZE=${CAM_SIZE:-90%}
-  export MUSIC_SIZE=${MUSIC_SIZE:-0}
-  export USB_DRIVE=${USB_DRIVE:-''}
-  export USE_EXFAT=${USE_EXFAT:-false}
-}
+if [[ $EUID -ne 0 ]]
+then
+  setup_progress "STOP: Run sudo -i."
+  exit 1
+fi
 
 if [ "$(. /etc/os-release && echo "$VERSION_ID")" = "9" ]
 then
   echo "STOP: Stretch-based install is no longer supported. Please flash the latest prebuilt."
   exit 1
-fi
-
-if [ "$0" = "-bash" ]
-then
-  # called from .bashrc as part of root login, set completion
-  complete -W "diagnose upgrade selfupdate install" setup-teslausb
-  return 0
-fi
-
-if [ "${BASH_SOURCE[0]}" != "$0" ]
-then
-  echo "${BASH_SOURCE[0]} was sourced, setting setup variables"
-  read_setup_variables
-  if [ -t 0 ] && ! declare -F log > /dev/null
-  then
-    function log { echo "$@"; }
-    export -f log
-  fi
-  return 0 # shouldn't use exit when sourced
 fi
 
 if [ "${FLOCKED:-}" != "$0" ]
@@ -140,13 +36,57 @@ function setup_progress () {
   echo "$@"
 }
 
-if [[ $EUID -ne 0 ]]
-then
-  setup_progress "STOP: Run sudo -i."
-  exit 1
-fi
+function curlwrapper () {
+  setup_progress "curl $*" > /dev/null
+  while ! curl -s --fail "$@"
+  do
+    setup_progress "'curl $*' failed, retrying" > /dev/null
+    sleep 3
+  done
+}
 
-read_setup_variables
+function copy_script () {
+  local remote_path="$1"
+  local name="${1/*\/}"
+  local local_path="$2"
+
+  if [ -z ${SOURCE_DIR:+x} ]
+  then
+    if declare -F download_sources &> /dev/null
+    then
+      download_sources
+    else
+      export SOURCE_DIR=/tmp/sourcedir
+      umount "$SOURCE_DIR" &> /dev/null || true
+      rm -rf "$SOURCE_DIR"
+      mkdir -p "$SOURCE_DIR"
+      mount -t tmpfs none "$SOURCE_DIR"
+      (
+        cd "$SOURCE_DIR"
+        curlwrapper -L "https://github.com/${REPO}/teslausb/archive/${BRANCH}.tar.gz" | tar zxf - --strip-components=1
+      )
+    fi
+  fi
+
+  # shellcheck disable=SC2086
+  cp "${SOURCE_DIR}/$remote_path" "$local_path/$name"
+  chmod +x "$local_path/$name"
+  setup_progress "Downloaded $local_path/$name ..."
+}
+
+THISDIR=$(dirname "$(readlink -f "$0")")
+if [ ! -e "$THISDIR/envsetup.sh" ]
+then
+  # source the conf file directly to get REPO, BRANCH or download_sources
+  # in case they're set
+  source /root/teslausb_setup_variables.conf
+  REPO=${REPO:-marcone}
+  BRANCH=${BRANCH:-main-dev}
+  copy_script setup/pi/envsetup.sh "$THISDIR"
+fi
+# SC can't follow non-constant source
+# shellcheck disable=SC1090
+source "$THISDIR/envsetup.sh"
 
 function dehumanize () {
   echo $(($(echo "$1" | sed 's/GB/G/;s/MB/M/;s/KB/K/;s/G/*1024M/;s/M/*1024K/;s/K/*1024/')))
@@ -157,20 +97,21 @@ REBOOT=false
 # wpa_supplicant should have a country code. Use US as the default
 # to avoid using the disallowed channels in the US.
 WPA=/etc/wpa_supplicant/wpa_supplicant.conf
-if ! grep -q "country=" $WPA
+if [ -e "$WPA" ] && ! grep -q "country=" $WPA
 then
   setup_progress "adding country code to wpa_supplicant.conf"
   echo "country=US" >> $WPA
   REBOOT=true
 fi
 
-readonly BOOT_DISK="/dev/mmcblk0boot"
-export BOOT_DISK
-readonly BOOT_PARTITION_DEVICE="/dev/mmcblk0boot0"
+BOOT_DISK=$(lsblk -dpno pkname "$(findmnt -D -no SOURCE --target /boot)")
+declare -rx BOOT_DISK
+BOOT_PARTITION_DEVICE=$(lsblk -dpno name "$(findmnt -D -no SOURCE --target /boot)")
+readonly BOOT_PARTITION_DEVICE
 readonly BOOT_DEVICE_PARTITION_PREFIX=${BOOT_PARTITION_DEVICE%?}
 export BOOT_DEVICE_PARTITION_PREFIX
-readonly ROOT_PARTITION_DEVICE="/dev/mmcblk1p1"
-export ROOT_PARTITION_DEVICE
+ROOT_PARTITION_DEVICE=$(lsblk -dpno name "$(findmnt -D -no SOURCE --target /)")
+declare -rx ROOT_PARTITION_DEVICE
 readonly ROOT_PART_NUM=${ROOT_PARTITION_DEVICE:0-1}
 export ROOT_PART_NUM;
 INCREASE_ROOT_SIZE=$(($(dehumanize "$INCREASE_ROOT_SIZE") / 512))
@@ -211,10 +152,6 @@ function headless_setup_mark_setup_success () {
   touch /boot/TESLAUSB_SETUP_FINISHED
 }
 
-function isPi4 {
-  grep -q "Pi 4" /sys/firmware/devicetree/base/model
-}
-
 function flash () {
   # Radxa Zero doesn't have any external LEDs
   return
@@ -228,65 +165,21 @@ function headless_setup_progress_flash () {
 }
 
 function verify_configuration () {
-  get_script /tmp verify-configuration.sh setup/pi
+  copy_script setup/pi/verify-configuration.sh /tmp
 
   /tmp/verify-configuration.sh
 }
 
-function curlwrapper () {
-  setup_progress "curl $*" > /dev/null
-  while ! curl -s --fail "$@"
-  do
-    setup_progress "'curl $*' failed, retrying" > /dev/null
-    sleep 3
-  done
-}
-
-function get_script () {
-  local local_path="$1"
-  local name="$2"
-  local remote_path="${3:-}"
-
-  if [ -z ${SOURCE_DIR:+x} ]
-  then
-    if declare -F download_sources &> /dev/null
-    then
-      download_sources
-    else
-      export SOURCE_DIR=/tmp/sourcedir
-      umount "$SOURCE_DIR" &> /dev/null || true
-      rm -rf "$SOURCE_DIR"
-      mkdir -p "$SOURCE_DIR"
-      mount -t tmpfs none "$SOURCE_DIR"
-      (
-        cd "$SOURCE_DIR"
-        curlwrapper -L "https://github.com/${REPO}/teslausb-radxa-zero/archive/${BRANCH}.tar.gz" | tar zxf - --strip-components=1
-      )
-    fi
-  fi
-
-  # shellcheck disable=SC2086
-  cp "${SOURCE_DIR}/$remote_path/$name" "$local_path/$name"
-  chmod +x "$local_path/$name"
-  setup_progress "Downloaded $local_path/$name ..."
-}
-
-function get_ancillary_setup_scripts () {
-  get_script /tmp create-backingfiles-partition.sh setup/pi
-  get_script /tmp create-backingfiles.sh setup/pi
-  get_script /tmp make-root-fs-readonly.sh setup/pi
-  get_script /tmp configure.sh setup/pi
-}
-
 function get_common_scripts () {
-  get_script /root/bin remountfs_rw run
-  get_script /root/bin make_snapshot.sh run
-  get_script /root/bin release_snapshot.sh run
-  get_script /root/bin force_sync.sh run
-  get_script /root/bin mountoptsforimage run
-  get_script /root/bin mountimage run
-  get_script /root/bin enable_gadget.sh run
-  get_script /root/bin disable_gadget.sh run
+  setup_progress "Downloading common runtime scripts."
+  copy_script run/remountfs_rw /root/bin
+  copy_script run/make_snapshot.sh /root/bin
+  copy_script run/release_snapshot.sh /root/bin
+  copy_script run/force_sync.sh /root/bin
+  copy_script run/mountoptsforimage /root/bin
+  copy_script run/mountimage /root/bin
+  copy_script run/enable_gadget.sh /root/bin
+  copy_script run/disable_gadget.sh /root/bin
   ln -sf /root/bin/mountimage /sbin/mount.teslausb
 }
 
@@ -311,7 +204,7 @@ function fix_cmdline_txt_modules_load () {
   # Extract the modules-load portion of the command line.
   # Note that this not handle spaces in the argument.
   local curparam
-  curparam=$(grep -P -o " modules.load=[^\s\$]*" /boot/cmdline.txt)
+  curparam=$(grep -P -o " modules.load=[^\s\$]*" /boot/cmdline.txt || true)
   if [[ "$curparam" == "" ]]
   then
     curparam="\$"
@@ -354,6 +247,7 @@ function create_usb_drive_backing_files () {
     mkdir "$MUTABLE_MOUNTPOINT"
   fi
 
+  copy_script setup/pi/create-backingfiles-partition.sh /tmp
   /tmp/create-backingfiles-partition.sh "$BACKINGFILES_MOUNTPOINT" "$MUTABLE_MOUNTPOINT"
 
   if ! findmnt --mountpoint $BACKINGFILES_MOUNTPOINT > /dev/null
@@ -373,6 +267,7 @@ function create_usb_drive_backing_files () {
   if [ ! -e $BACKINGFILES_MOUNTPOINT/cam_disk.bin ]
   then
     setup_progress "Creating backing disk files."
+    copy_script setup/pi/create-backingfiles.sh /tmp
     /tmp/create-backingfiles.sh "$CAM_SIZE" "$MUSIC_SIZE" "$BACKINGFILES_MOUNTPOINT" "$USE_EXFAT"
   fi
 
@@ -432,12 +327,13 @@ function configure_hostname () {
       setup_progress "hostnamectl failed, retrying"
       sleep 1
     done
-    systemctl restart avahi-daemon
+    systemctl restart avahi-daemon || true
     setup_progress "Configured hostname: $(hostname)"
   fi
 }
 
 function make_root_fs_readonly () {
+  copy_script setup/pi/make-root-fs-readonly.sh /tmp
   /tmp/make-root-fs-readonly.sh
 }
 
@@ -510,7 +406,7 @@ function get_usb_state {
   last=$(dmesg | grep 'g_mass_storage\|dwc2' | tail -1)
   if [ -z "$last" ]
   then
-    echo "no UMS/dwc2 messages in dmesg"
+    echo ". No UMS/dwc2 messages in dmesg"
     return
   fi
   local usbstatetime
@@ -537,22 +433,13 @@ function get_usb_state {
 
 function cmd_install {
   /root/bin/remountfs_rw
-  get_script /root/bin "$(basename "$1")" "$(dirname "$1")"
+  copy_script "$1" /root/bin
   setup_progress "$1 installed in /root/bin/"
   exit
 }
 
 function cmd_selfupdate {
-  get_script /tmp setup-teslausb setup/pi &> /dev/null
-  if cmp -s /tmp/setup-teslausb /root/bin/setup-teslausb
-  then
-    setup_progress "$0 already up to date"
-  else
-    /root/bin/remountfs_rw > /dev/null
-    mv /tmp/setup-teslausb /root/bin/setup-teslausb
-    setup_progress "$0 updated"
-  fi
-  setup_progress "other scripts may need to be updated by running $0"
+  echo "The 'selfupdate' command is no longer supported. Run '$0 upgrade' instead."
   exit 0
 }
 
@@ -562,7 +449,8 @@ function cmd_upgrade {
     echo "STOP: previous setup didn't finish, can't upgrade unfinished install"
     exit 1
   fi
-  get_script /tmp setup-teslausb setup/pi &> /dev/null
+  copy_script setup/pi/setup-teslausb /tmp &> /dev/null
+  copy_script setup/pi/envsetup.sh /tmp &> /dev/null
   exec bash -c "/tmp/setup-teslausb upgrade_prepare && /tmp/setup-teslausb && /tmp/setup-teslausb upgrade_finish" < /dev/null
 }
 
@@ -583,6 +471,7 @@ function cmd_upgrade_prepare {
 
 function cmd_upgrade_finish {
   mv /tmp/setup-teslausb /root/bin/setup-teslausb
+  mv /tmp/envsetup.sh /root/bin/envsetup.sh
   setup_progress "upgrade finished"
   for i in {5..1}
   do
@@ -590,7 +479,7 @@ function cmd_upgrade_finish {
     sleep 1
   done
   echo -e '\nRebooting'
-  systemctl start reboot.target
+  reboot
 }
 
 function checkfsrw() {
@@ -600,6 +489,10 @@ function checkfsrw() {
   then
     echo "$1 is $rw, should be $2"
   fi
+}
+
+function boot_is_not_on_root {
+  [ "$(stat -c "%d" /)" -ne "$(stat -c "%d" /boot)" ]
 }
 
 function diagnose {
@@ -638,9 +531,9 @@ function diagnose {
       echo "archive method: ${ARCHIVE_SYSTEM:-unset}"
     fi
 
-    if [[ "$USB_DRIVE" != "" ]]
+    if [[ "$DATA_DRIVE" != "" ]] && isPi4
     then
-      echo "USB_DRIVE=$USB_DRIVE: consider booting from USB instead."
+      echo "DATA_DRIVE=$DATA_DRIVE: consider booting from USB instead."
     fi
 
     if ! blkid -L backingfiles > /dev/null
@@ -687,6 +580,11 @@ function diagnose {
       echo "ERROR: mutable not in fstab"
     fi
 
+    if [ -n "${SNAPSHOT_INTERVAL:+x}" ]
+    then
+      echo "Snapshot interval: $SNAPSHOT_INTERVAL"
+    fi
+
     numsnapshots=$( mount | grep -c snapshot )
     echo "$numsnapshots snapshots mounted"
 
@@ -727,15 +625,18 @@ function diagnose {
       echo "CAM drive is formatted as ExFAT. Recommend using FAT32 instead."
     fi
     checkfsrw / ro
-    checkfsrw /boot ro
+    if boot_is_not_on_root
+    then
+      checkfsrw /boot ro
+    fi
     checkfsrw /backingfiles rw
     checkfsrw /mutable rw
 
     echo -e "====== disk / images ======"
     parted -s "${BOOT_DISK}" print || true
-    if [ -n "${USB_DRIVE:+x}" ]
+    if [ -n "${DATA_DRIVE:+x}" ]
     then
-      parted -s "$USB_DRIVE" print || true
+      parted -s "$DATA_DRIVE" print || true
     fi
     if [ -f /backingfiles/cam_disk.bin ]
     then
@@ -849,28 +750,40 @@ then
   fi
 fi
 
+# Update /boot/config.txt if needed
+if [ -e /boot/config.txt ]
+then
+  if ! grep -q 'dtoverlay=dwc2' /boot/config.txt
+  then
+    echo -e "dtoverlay=dwc2\n" >> /boot/config.txt
+    setup_progress "rebooting to apply dwc2 overlay change"
+    reboot
+    exit 0
+  fi
+fi
+
 configure_hostname
 
 tmpdir=/tmp/$$
 mkdir -p "$tmpdir"
-get_script "$tmpdir" setup-teslausb setup/pi &> /dev/null
+copy_script setup/pi/setup-teslausb "$tmpdir"  &> /dev/null
 if cmp -s "$tmpdir/setup-teslausb" "$0"
 then
   setup_progress "$0 is up to date"
 else
-  setup_progress "WARNING: $BRANCHNAME contains a different version of $0. It is recommended to run '$0 selfupdate' to update to that version"
+  setup_progress "WARNING: $BRANCHNAME contains a different version of $0. It is recommended to run '$0 upgrade' to get the latest version."
 fi
 
-get_script "$tmpdir" rc.local pi-gen-sources/00-teslausb-tweaks/files &> /dev/null
+copy_script pi-gen-sources/00-teslausb-tweaks/files/rc.local "$tmpdir" &> /dev/null
 if cmp -s "$tmpdir/rc.local" /etc/rc.local
 then
   setup_progress "rc.local is up to date"
 else
   setup_progress "updating rc.local"
   mv "$tmpdir/rc.local" /etc/rc.local
-  readonly parent=$(ps -o ppid= $PPID)
-  readonly grandparent=$(ps -o ppid= "$((parent))" )
-  readonly caller=$(ps -o comm= "$((grandparent))")
+  parent=$(ps -o ppid= $PPID)
+  grandparent=$(ps -o ppid= "$((parent))" )
+  caller=$(ps -o comm= "$((grandparent))")
   if [ "$caller" = "rc.local" ] && [ ! -t 0 ]
   then
     setup_progress "rebooting to run updated rc.local"
@@ -893,13 +806,9 @@ verify_configuration
 # Flash for Stage 3 headless (grab scripts)
 headless_setup_progress_flash 3
 
-setup_progress "Downloading additional setup scripts."
-
 mkdir -p /root/bin
 
 get_common_scripts
-
-get_ancillary_setup_scripts
 
 pushd ~
 
@@ -914,7 +823,8 @@ if [ "$CONFIGURE_ARCHIVING" = true ]
 then
   setup_progress "calling configure.sh"
   export -f curlwrapper
-  export -f get_script
+  export -f copy_script
+  copy_script setup/pi/configure.sh /tmp
   /tmp/configure.sh
 else
   setup_progress "skipping configure.sh"
@@ -923,27 +833,28 @@ fi
 if [ "$SAMBA_ENABLED" = "true" ]
 then
   export SAMBA_GUEST
-  get_script /tmp configure-samba.sh setup/pi
+  copy_script setup/pi/configure-samba.sh /tmp
   /tmp/configure-samba.sh
 fi
 
 if [ -n "${AP_SSID:+x}" ]
 then
-  get_script /tmp configure-ap.sh setup/pi
+  copy_script setup/pi/configure-ap.sh /tmp
   /tmp/configure-ap.sh
 fi
 
-get_script /tmp configure-automount.sh setup/pi
+copy_script setup/pi/configure-automount.sh /tmp
 /tmp/configure-automount.sh
 
-get_script /tmp configure-web.sh setup/pi
+copy_script setup/pi/configure-web.sh /tmp
 /tmp/configure-web.sh
 
 # source setup-teslausb from .bashrc to set up completion
-if ! grep -q setup-teslausb /root/.bashrc
+if ! grep -q envsetup.sh /root/.bashrc
 then
-  echo "source /root/bin/setup-teslausb" >> /root/.bashrc
+  echo "source /root/bin/envsetup.sh" >> /root/.bashrc
 fi
+sed -i '/source \/root\/bin\/setup-teslausb/d' /root/.bashrc
 
 # UX courtesy reminders
 if ! grep -q TESLAUSB_TIP1 /root/.bashrc
@@ -957,14 +868,18 @@ then
 	EOC
 fi
 
-if ! grep -q TESLAUSB_TIP1 /home/pi/.bashrc
+DEFUSER=$(grep ":1000:1000:" /etc/passwd | awk -F : '{print $1}')
+if [ -n "$DEFUSER" ]
 then
-  cat >> /home/pi/.bashrc <<- EOC
+  if ! grep -q TESLAUSB_TIP1 "/home/$DEFUSER/.bashrc"
+  then
+    cat >> "/home/$DEFUSER/.bashrc" <<- EOC
 	cat << TESLAUSB_TIP1
 	Run 'sudo -i' if you need to make changes.
 
 	TESLAUSB_TIP1
 	EOC
+  fi
 fi
 
 make_root_fs_readonly
